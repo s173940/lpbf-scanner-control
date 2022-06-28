@@ -1,0 +1,16 @@
+\chapter{Conclusion}
+
+The L-PBF system of the Open AM Group is already highly functional. Still there are a lot of areas that could be improved. This project was a deep dive into two of them: calibration and trajectory planning.
+
+To prepare for the work on those two areas the interactions of scanner, laser and f-theta lens were modelled. It was found that the laser and scanner mirrors could be modelled well by parametric representations while the f-theta lens must be modelled by the f-theta relations. It was then shown that it was mostly the f-theta relations and not the scanner that dictated the forward kinematic equations. It was also found though that the f-theta relations were only approximations and that the actual behaviour must deviate from the f-theta relations because of at least two things:
+
+\begin{itemize}
+    \item They assume independent movement of x- and y- coordinate, which is only true for small angles.
+    \item They assume that the distance from the f-theta lens at which the incoming beam is deflected is the same for deflection in x- and y- direction, which is not the case.
+\end{itemize}
+
+It is concluded that the actual kinematic properties of the scanner could be investigated by a process of first producing a calibration medium consisting of a grid of circles, then measuring the positions of the circles with automated perimeter detection, and lastly fitting the measured centre coordinates to linear functions of two variables (the nominal centre coordinates). From this process it was found that the L-PBF movements in the x-direction were 0.42\% smaller than intended, the movements in the y-direction were 0.67\% smaller than intended and that the axis were slightly sheared.
+
+Two control strategies were found and implemented to improve the movements of the scanner: calibration and trajectory planning. The calibration was done by solving the linear functions that were found to describe the actual properties in order to find out how to compensate for the systematic position errors. This reduced the error in the movement in the x-direction to 0.01\% and the error in the y-direction to 0.48\%.
+
+Trajectory planning was found to help keep a constant velocity during the movements where the laser was on. This was done by designing the trajectory of the scanner leading up to the part where the laser was switched on so that it would already have the correct velocity in the moment the laser was turned on. Quintic trajectories and modified cubic trajectories were both found to be able to achieve this. Both could be implemented by describing the trajectories in g-code while choosing the sample rate carefully to respect the hardware limitations of the scanner and the process controller. The experiment that tested the velocities at different common scan velocities showed that this implementation also worked as intended in practice.

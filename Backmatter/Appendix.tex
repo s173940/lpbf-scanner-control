@@ -1,1 +1,28 @@
-\chapter{Title}
+\chapter{Appendix}
+
+\section{Repository} \label{app:repository}
+All relevant files are also uploaded to a git repository at: \\
+\sffamily
+codeberg.org/lukaskluge/calibration-and-trajectory-planning-for-a-L-PBF-system
+\rmfamily
+
+\section{Code}
+\subsection{Calibration MATLAB code} \label{app:calibration-matlab}
+\includepdf[pages=-,pagecommand={},width=\textwidth]{Backmatter/calibration_script_for_report.pdf}
+\subsection{Calibration python g-code converter} \label{app:calibration-g-code-python}
+\input{Backmatter/g-code-calibration-py}
+\subsection{Fifth order trajectory planning} \label{app:quintic-planning-python}
+\input{Backmatter/quinticTrajectory-py}
+\subsection{Modified third order trajectory planning} \label{app:cubic-planning-python}
+\input{Backmatter/cubicTrajectory-py}
+\subsection{Trajectory planning python g-code converter} \label{app:traj-g-code}
+\input{Backmatter/g-code-trajectory-insert-py}
+
+\section{Experiment data}
+\subsection{Calibration experiment before} \label{app:calibration-data}
+\nopagecolor
+\includepdf[width=1.3\linewidth,pages=-]{Backmatter/calibration-measurement-data.pdf}
+%\includepdf[pages=-,width=0.5\textwidth]{Backmatter/2022-05-24-1426.pdf}
+\subsection{Calibration experiment after} \label{app:verification-data}
+\includepdf[pages=-,pagecommand={},width=1.3\linewidth]{Backmatter/verification-measurements-data.pdf}
+

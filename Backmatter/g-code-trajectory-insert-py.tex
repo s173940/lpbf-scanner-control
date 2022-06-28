@@ -1,0 +1,154 @@
+\begin{minted}{python}
+# g-code-trajectory-insert
+
+# usage in terminal: 
+# $ py g-code-trajectory-insert.py "filename.g" 57.5 1000 600 63 0.00002 3
+# order of arguments: maxPos maxSpeed cpAvgV mls minT style
+
+import sys
+import datetime
+
+import quinticTrajectory as q
+import cubicTrajectory as c
+
+rawFileName = sys.argv[1]
+maxPos = float(sys.argv[2])
+maxSpeed = float(sys.argv[3])
+cpAvgV = float(sys.argv[4]) # irrelevant for cubic
+mls = int(sys.argv[5]) # GLAMS g-code buffer size
+minT = float(sys.argv[6]) # less than read speed of scanner
+style = int(sys.argv[7]) # 3 or 5 for cubic or quintic trajectories
+
+def isMeltLine(line):
+    coords = line.find("X")
+    density = line.find("D")
+    return (coords > -1) and (density > -1) and int(line[density+1]) > 0
+
+def isMoveLine(line):
+    coords = line.find("X")
+    density = line.find("D")
+    return (coords > -1) and ((density == -1) or int(line[density+1]) == 0)
+
+def isSpeedChange(command):
+    speed = -1
+    for x in command:
+        if x[0] == 'F':
+            speed = float(x[1:])
+    return speed
+
+def findCoords(command):
+    i = 0
+    while i < len(command) and command[i][0] != "X":
+        i += 1
+
+    inputX = float(command[i][1:])
+    inputY = float(command[i + 1][1:])
+    return [inputX, inputY]
+
+# create file with trajectories if not existing
+fileWithTrajectories = open(rawFileName[:-2] + "-with-" + str(style) +
+        "trajectories.g", 'x')
+
+# read original file and fill new file accordingly
+with open(rawFileName, 'r') as rawFile:
+    firstEmptyLineFlag = True # checks where to add "trajectories added" note
+    sa = [0, 0] # init most recent position [x [mm], y [mm]]
+    sb = [-1, 0] # init second most recent position
+    sc = [0, 0] # init third most recent position
+    sd = [0, 0] # init fourth most recent position 
+    pba = [0, True] # init path from sb to sa [speed, laser on?]
+    pcb = [0, False] # init path from sc to sb
+    pdc = [0, False] # init path from sd to sc
+    cache = [sa, pba, sb, pcb, sc, pdc, sd] # array of previous movements
+    currentSpeed = 0 # speed is set asynchroniously in the g-code, thus need var
+
+    for line in rawFile:
+        command = line.split() # divide into components
+
+        if len(command) == 0:
+            # add metadata about added trajectories,
+            if firstEmptyLineFlag:
+                fileWithTrajectories.write(";Trajectories added: " +
+                        datetime.datetime.now().isoformat() + "\n")
+                fileWithTrajectories.write(";Max position: " +
+                        '%.5f' % maxPos + "\n")
+                fileWithTrajectories.write(";Max speed: " +
+                        '%.5f' % maxSpeed + "\n")
+                fileWithTrajectories.write(";Min T (time for one movement): " +
+                        '%.5f' % minT + "\n")
+                fileWithTrajectories.write(";average speed of move trajectories: " +
+                        '%.5f' % cpAvgV + "\n")
+                fileWithTrajectories.write(";Max line segments: " +
+                        '%.5f' % mls + "\n")
+                fileWithTrajectories.write(";polynomial type (3rd or 5th order): " +
+                        '%.5f' % style + "\n")
+
+                firstEmptyLineFlag = False
+            # copy (empty) line to output
+            fileWithTrajectories.write(line)
+
+        # copy lines that are not about movement directly to output
+        elif command[0] != 'G1':
+            fileWithTrajectories.write(line)
+
+        # check if line moves the off laser and store info if it does
+        elif isMoveLine(line):
+            sd = sc
+            sc = sb
+            sb = sa
+            sa = findCoords(command)
+
+            pdc = pcb
+            pcb = pba
+            pba = [currentSpeed, False]
+
+            if not pcb[1]:
+                fileWithTrajectories.write(line) # TODO write previous line instead
+
+        
+        # check if line moves the on laser and print the appropriate
+        # move trajectory to lead up to and including that line.
+        elif isMeltLine(line):
+            # make room for new position
+            sd = sc
+            sc = sb
+            sb = sa
+            sa = findCoords(command) # add newest position
+
+            # make room for new path
+            pdc = pcb
+            pcb = pba
+            pba = [currentSpeed, True] # add newest path
+
+            if not pcb[1]: # check if previous line was move line 
+                if style == 5: # quintic
+                    moveTrajectory = q.quinticTrajectory(sd[0], sd[1], sc[0], sc[1],
+                            sb[0], sb[1], sa[0], sa[1],
+                            pdc[0], pba[0], cpAvgV, mls, minT, maxPos, maxSpeed)
+                elif style == 3: # cubic
+                    moveTrajectory = c.cubicTrajectory(sc[0], sc[1], sb[0], sb[1],
+                            sa[0], sa[1], pba[0], mls, minT, maxPos, maxSpeed)
+
+                # print move trajectory g-code and melt trajectory g-code
+                for i in range(len(moveTrajectory[0])):
+                    # speed
+                    fileWithTrajectories.write(
+                            "G1 F" + '%.6f' % moveTrajectory[2][i] + "\n")
+                    # position (add D at the end if the laser should be on)
+                    fileWithTrajectories.write(
+                            "G1 X" + '%.6f' % moveTrajectory[0][i] + " Y" +
+                                    '%.6f' % moveTrajectory[1][i] + "\n")
+                
+                fileWithTrajectories.write("G1 F" + str(pba[0]) + "\n")
+                fileWithTrajectories.write(line)
+
+        # other G-commands should there be any,
+        # are just copied to output file
+        else: 
+            if isSpeedChange(command) > -1: 
+                currentSpeed = isSpeedChange(command)
+            fileWithTrajectories.write(line)
+
+fileWithTrajectories.close()
+
+\end{minted}

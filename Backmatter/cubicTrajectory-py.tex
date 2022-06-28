@@ -1,0 +1,142 @@
+\begin{minted}{python}
+# author: Lukas Kluge, 2022-05-05
+
+import math
+
+def cubicTrajectory(psx1, psy1, nsx0, nsy0, nsx1, nsy1,
+        nvNorm, mls, minT, maxPos, maxSpeed):
+    #
+    # Given information about two melt trajectories, this function
+    # calculates a cubic move trajectory that starts at max velocity
+    #
+    #
+    # inputs:
+    #
+    # psx1 = end x-coord of previous line segment [mm]
+    # psy1 = end y-coord of previous line segment [mm]
+    #
+    # nsx0 = start x-coord of next line segment [mm]
+    # nsy0 = start y-coord of next line segment [mm]
+    #
+    # nsx1 = end x-coord of next line segment [mm]
+    # nsy1 = end y-coord of next line segment [mm]
+    #
+    # nvNorm = speed (norm of velocity) of next line
+    #
+    # mls = max. no. line segments of move trajectory (depends on GLAMS buffer size)
+    # minT = min. duration of each line segment [s] (depends on scanner read speed)
+    # 
+    # maxPos = max. distance the trajectory can deviate from the center of field
+    # maxSpeed = max. absolute velocity of the trajectory.
+    # Should be at least three times higher than nvNorm (see t1x, t1y)
+    #
+    # outputs:
+    # array of [x, y, speed] (units [mm, mm, mm/s]) ready for g-code
+    #
+    # if you don't like short var names use find/replace to change them
+
+    t1 = endTime(psx1, psy1, nsx0, nsy0, nsx1, nsy1,
+            nvNorm, maxSpeed)
+    beta = cubicPolynomialCoeffs(psx1, psy1,
+            nsx0, nsy0, nsx1, nsy1, nvNorm, t1)
+    t = discreteTime(t1, mls, minT)
+    points = len(t)
+    sx = [0]*points
+    sy = [0]*points
+    for i in range(points):
+        sx[i] = cubicPolynomial(t[i], beta[0][0], beta[0][1], beta[0][2],
+                beta[0][3])
+        sy[i] = cubicPolynomial(t[i], beta[1][0], beta[1][1], beta[1][2],
+                beta[1][3])
+
+    limitPosition(points, t, sx, sy, maxPos)
+    sNorm = findDistances(points, sx, sy)
+    vNorm = findSpeeds(points, t, sNorm)
+
+    return [sx[1:], sy[1:], vNorm]
+
+def endTime(psx1, psy1, nsx0, nsy0, nsx1, nsy1,
+        nvNorm, maxSpeed):
+    # The trajectory is assumed to start at t=0.
+    # This functions calculates at what time it should end
+
+    # find maxSpeed in each direction, taking into account
+    # norm max speed and sign to get a positive t1
+    maxSpeedx = 0.7071*math.copysign(maxSpeed, nsx0-psx1)
+    maxSpeedy = 0.7071*math.copysign(maxSpeed, nsy0-psy1)
+    
+    nsNorm = math.sqrt((nsx1-nsx0)**2 + (nsy1-nsy0)**2)
+    nvx = (nsx1-nsx0)/nsNorm*nvNorm # next vel in x-direction
+    nvy = (nsy1-nsy0)/nsNorm*nvNorm # next vel in y-direction
+
+    t1x = (3*nsx0-3*psx1)/(2*nvx+maxSpeedx)
+    t1y = (3*nsy0-3*psy1)/(2*nvy+maxSpeedy)
+
+    return t1x if (t1x>t1y) else t1y
+
+def cubicPolynomialCoeffs(psx1, psy1, nsx0, nsy0, nsx1, nsy1,
+        nvNorm, t1):
+    # This calculates the coefficients of the polynomials describing the trajectory
+    # TODO refactor into two functions: find boundary conditions and find coeffs
+
+    nsNorm = math.sqrt((nsx1-nsx0)**2 + (nsy1-nsy0)**2)
+    nvx = (nsx1-nsx0)/nsNorm*nvNorm # nrev vel in x-direction
+    nvy = (nsy1-nsy0)/nsNorm*nvNorm # nrev vel in y-direction
+
+    # x polynomial coefficients
+    betax0 = psx1
+    betax1 = -(3*psx1 - 3*nsx0 + 2*t1*nvx)/t1
+    betax2 = (3*(psx1 - nsx0 + t1*nvx))/t1**2
+    betax3 = -(psx1 - nsx0 + t1*nvx)/t1**3
+
+    # y polynomial coefficients
+    betay0 = psy1
+    betay1 = -(3*psy1 - 3*nsy0 + 2*t1*nvy)/t1
+    betay2 = (3*(psy1 - nsy0 + t1*nvy))/t1**2
+    betay3 = -(psy1 - nsy0 + t1*nvy)/t1**3
+
+    return [[betax0, betax1, betax2, betax3],
+            [betay0, betay1, betay2, betay3]]
+
+def discreteTime(t1, mls, minT):
+    if (t1/minT <= mls):
+        ls = math.floor(t1/minT)
+        nomT = t1/ls # nominal T (actual dt might differ after limit correction)
+        tDiscrete = [0]*(ls+1) # initialise
+        for i in range(ls+1):
+            tDiscrete[i] = nomT*i
+    else:
+        nomT = t1/mls # nominal T (actual dt might differ after limit correction)
+        tDiscrete = [0]*(mls+1) # initialise
+        for i in range(mls+1):
+            tDiscrete[i] = nomT*i
+    return tDiscrete
+
+def cubicPolynomial(t, beta0, beta1, beta2, beta3):
+    return beta0 + beta1*t + beta2*t**2 + beta3*t**3
+
+def limitPosition(points, t, sx, sy, maxPos):
+    for i in range(points):
+        if sx[i] > maxPos:
+            sx[i] = maxPos
+        elif sx[i] < -maxPos:
+            sx[i] = -maxPos
+        if sy[i] > maxPos:
+            sy[i] = maxPos
+        elif sy[i] < -maxPos:
+            sy[i] = -maxPos
+    return [t, sx, sy]
+
+def findDistances(points, sx, sy):
+    sNorm = [0]*(points - 1)
+    for i in range(points - 1):
+        sNorm[i] = math.sqrt((sx[i+1]-sx[i])**2 + (sy[i+1]-sy[i])**2)
+    return sNorm
+
+def findSpeeds(points, t, sNorm):
+    vNorm = [0]*(points - 1)
+    for i in range(points - 1):
+        T = t[i+1] - t[i]
+        vNorm[i] = sNorm[i]/T
+    return vNorm
+\end{minted}

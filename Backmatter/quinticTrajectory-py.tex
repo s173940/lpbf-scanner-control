@@ -1,0 +1,151 @@
+\begin{minted}{python}
+# author: Lukas Kluge, 2022-05-05
+
+import math
+
+def quinticTrajectory(psx0, psy0, psx1, psy1, nsx0, nsy0, nsx1, nsy1,
+        pvNorm, nvNorm, cpAvgV, mls, minT, maxPos, maxSpeed):
+    #
+    # Given information about two melt trajectories, this function
+    # calculates a quintic move trajectory that connects them smoothly
+    #
+    # inputs:
+    # psx0 = start x-coord of previous line segment [mm]
+    # psy0 = start y-coord of previous line segment [mm]
+    #
+    # psx1 = end x-coord of previous line segment [mm]
+    # psy1 = end y-coord of previous line segment [mm]
+    #
+    # nsx0 = start x-coord of next line segment [mm]
+    # nsy0 = start y-coord of next line segment [mm]
+    #
+    # nsx1 = end x-coord of next line segment [mm]
+    # nsy1 = end y-coord of next line segment [mm]
+    #
+    # pvNorm = speed (norm of velocity) of previous line
+    # nvNorm = speed of next line
+    #
+    # cpAvgV = desired absolute average velocity of move trajectory [mm/s]
+    #
+    # mls = max. no. line segments of move trajectory (depends on GLAMS buffer size)
+    # minT = min. duration of each line segment [s] (depends on scanner read speed)
+    # 
+    # maxPos = max. distance the trajectory can deviate from the center of field
+    # maxSpeed = max. absolute velocity of the trajectory
+    #
+    # outputs:
+    # array of [x, y, speed] (units [mm, mm, mm/s]) ready for g-code
+    #
+    # if you don't like short var names use find/replace to change them
+
+    t1 = endTime(psx1, psy1, nsx0, nsy0, cpAvgV)
+    beta = quinticPolynomialCoeffs(psx0, psy0, psx1, psy1,
+            nsx0, nsy0, nsx1, nsy1, pvNorm, nvNorm, t1)
+    t = discreteTime(t1, mls, minT)
+    points = len(t)
+    sx = [0]*points
+    sy = [0]*points
+    for i in range(points):
+        sx[i] = quinticPolynomial(t[i], beta[0][0], beta[0][1], beta[0][2],
+                beta[0][3], beta[0][4], beta[0][5])
+        sy[i] = quinticPolynomial(t[i], beta[1][0], beta[1][1], beta[1][2],
+                beta[1][3], beta[1][4], beta[1][5])
+
+    limitPosition(points, t, sx, sy, maxPos)
+    sNorm = findDistances(points, sx, sy)
+    vNorm = findSpeeds(points, t, sNorm)
+    limitSpeeds(points, vNorm, t, sNorm, maxSpeed)
+
+    return [sx[1:], sy[1:], vNorm]
+
+def endTime(psx1, psy1, nsx0, nsy0, cpAvgV):
+    # The trajectory is assumed to start at t=0.
+    # This functions calculates at what time it should end
+    cpsNorm = math.sqrt((nsx0-psx1)**2 + (nsy0-psy1)**2)
+    return cpsNorm/cpAvgV
+
+def quinticPolynomialCoeffs(psx0, psy0, psx1, psy1, nsx0, nsy0, nsx1, nsy1,
+        pvNorm, nvNorm, t1):
+    # This calculates the coefficients of the polynomials describing the trajectory
+    # TODO refactor into two functions: find boundary conditions and find coeffs
+
+    psNorm = math.sqrt((psx1-psx0)**2 + (psy1-psy0)**2) 
+    pvx = (psx1-psx0)/psNorm*pvNorm # prev vel in x-direction
+    pvy = (psy1-psy0)/psNorm*pvNorm # prev vel in y-direction
+
+    nsNorm = math.sqrt((nsx1-nsx0)**2 + (nsy1-nsy0)**2)
+    nvx = (nsx1-nsx0)/nsNorm*nvNorm # nrev vel in x-direction
+    nvy = (nsy1-nsy0)/nsNorm*nvNorm # nrev vel in y-direction
+
+    # x polynomial coefficients
+    betax0 = psx1
+    betax1 = pvx
+    betax2 = 0
+    betax3 = -(10*psx1 - 10*nsx0 + t1*(6*pvx + 4*nvx))/(t1**3)
+    betax4 = (15*psx1 - 15*nsx0 + t1*(8*pvx + 7*nvx))/(t1**4)
+    betax5 = -(6*psx1 - 6*nsx0 + t1*(3*pvx + 3*nvx))/(t1**5)
+
+    # y polynomial coefficients
+    betay0 = psy1
+    betay1 = pvy
+    betay2 = 0
+    betay3 = -(10*psy1 - 10*nsy0 + t1*(6*pvy + 4*nvy))/(t1**3)
+    betay4 = (15*psy1 - 15*nsy0 + t1*(8*pvy + 7*nvy))/(t1**4)
+    betay5 = -(6*psy1 - 6*nsy0 + t1*(3*pvy + 3*nvy))/(t1**5)
+
+    return [[betax0, betax1, betax2, betax3, betax4, betax5],
+            [betay0, betay1, betay2, betay3, betay4, betay5]]
+
+def discreteTime(t1, mls, minT):
+    if (t1/minT <= mls):
+        ls = math.floor(t1/minT)
+        nomT = t1/ls # nominal T (actual dt might differ after limit correction)
+        tDiscrete = [0]*(ls+1) # initialise
+        for i in range(ls+1):
+            tDiscrete[i] = nomT*i
+    else:
+        nomT = t1/mls # nominal T (actual dt might differ after limit correction)
+        tDiscrete = [0]*(mls+1) # initialise
+        for i in range(mls+1):
+            tDiscrete[i] = nomT*i
+    return tDiscrete
+
+def quinticPolynomial(t, beta0, beta1, beta2, beta3, beta4, beta5):
+    return beta0 + beta1*t + beta2*t**2 + beta3*t**3 + beta4*t**4 + beta5*t**5
+
+def limitPosition(points, t, sx, sy, maxPos):
+    for i in range(points):
+        if sx[i] > maxPos:
+            sx[i] = maxPos
+        elif sx[i] < -maxPos:
+            sx[i] = -maxPos
+        if sy[i] > maxPos:
+            sy[i] = maxPos
+        elif sy[i] < -maxPos:
+            sy[i] = -maxPos
+    return [t, sx, sy]
+
+def findDistances(points, sx, sy):
+    sNorm = [0]*(points - 1)
+    for i in range(points - 1):
+        sNorm[i] = math.sqrt((sx[i+1]-sx[i])**2 + (sy[i+1]-sy[i])**2)
+    return sNorm
+
+def findSpeeds(points, t, sNorm):
+    vNorm = [0]*(points - 1)
+    for i in range(points - 1):
+        T = t[i+1] - t[i]
+        vNorm[i] = sNorm[i]/T
+    return vNorm
+
+def limitSpeeds(points, vNorm, t, sNorm, maxSpeed):
+    Tnom = t[1] # nominal time interval (before speed limit)
+    for i in range(points-1):
+        if vNorm[i] > maxSpeed:
+            vNorm[i] = maxSpeed
+            t[i+1] = t[i] + sNorm[i]/maxSpeed
+            for j in range((i+1),points-1):
+                t[j] = t[j] + (sNorm[j]/maxSpeed - Tnom)
+    return vNorm
+
+\end{minted}

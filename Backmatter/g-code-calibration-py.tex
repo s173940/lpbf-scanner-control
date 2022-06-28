@@ -1,0 +1,77 @@
+\begin{minted}{python}
+import sys
+import datetime
+
+# usage in terminal:
+# $ py g-code calibration.py "filename.g" 0.1 1.09 0.02 -0.3 1.06 -0.05
+# (order of the calibration coefficients: qx00 qx10 qx01 qy00 qy10 qy01
+# The q00's can be set to zero to keep centre position
+
+# define calibration function (inverse fit)
+def calibrate(x, y, qx00, qx10, qx01, qy00, qy10, qy01):
+    # Takes as input the desired physical x,y coords plus regression params
+    # and gives as output the corresponding corrected g-code x,y vals.
+    # The expression stems from the "data-analysis" matlab script
+    calX = -(qy00*qx01 - qx00*qy10 + qy10*x - qx01*y)/(qx01*qy01 - qx10*qy10)
+    calY = -(qx00*qy01 - qy00*qx10 + qx10*y - qy01*x)/(qy01*qx01 - qy10*qx10)
+
+    return calX, calY
+
+# read inputs
+rawFileName = sys.argv[1]
+qx00 = sys.argv[2]
+qx10 = sys.argv[3]
+qx01 = sys.argv[4]
+qy00 = sys.argv[5]
+qy10 = sys.argv[6]
+qy01 = sys.argv[7]
+
+# only creates file if not existing
+calibratedFile = open(rawFileName[:-2] + "-calibrated.g", 'x') 
+
+with open(rawFileName, 'r') as rawFile:
+
+    firstEmptyLineFlag = True
+    for line in rawFile:
+        command = line.split()
+
+        # everything else than G1 commands is just copied
+        if len(command) == 0:
+            if firstEmptyLineFlag: 
+                calibratedFile.write(";Calibrated: " +
+                        datetime.datetime.now().isoformat() + "\n")
+                firstEmptyLineFlag = False
+            calibratedFile.write(line)
+
+        elif command[0] != 'G1':
+            calibratedFile.write(line)
+
+        else:
+            newLine = 'G1 ' # initiate line for new file.
+
+            i = 1
+
+            #Copy everything before first coordinate
+            while i < len(command) and command[i][0] != "X":
+                newLine += " " + command[i] 
+                i += 1
+
+            # convert coords and write
+            if i < len(command): #check if we reached eol already (there are no coords)
+                inputX = float(command[i][1:])
+                inputY = float(command[i + 1][1:])
+                calX, calY = calibrate(inputX, inputY, qx00, qx10, qx01, qy00, qy10, qy01)
+                newLine += "X" + str(round(calX, 4)) + " "
+                newLine += "Y" + str(round(calY, 4))
+            i += 2 # jump to after coords
+
+            # copy everything after coords
+            for word in command[i:]:
+                newLine += " " + word
+
+            # write to file
+            calibratedFile.write(newLine + "\n")
+
+calibratedFile.close()
+
+\end{minted}

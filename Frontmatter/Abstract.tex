@@ -1,8 +1,16 @@
 \section*{Abstract}
 \addcontentsline{toc}{section}{Abstract}
-\blindtext
 
+The overall goal of this project has been to improve the production quality of a laser powder bed fusion system. The area of focus was the movement of the scanner, and thus the laser beam. The basic idea for how to better the movement was to apply control theory in a broad sense. More specifically calibration was used to obtain more accurate reproduction of intended geometries and trajectory planning was used to achieve constant velocity during the scan paths of the laser. This constant velocity is important because it determines the energy density of the melt process which has major influence on the quality of the final material.
 
+The full laser powder bed system design was presented with diagrams and descriptions, to explain the context in which the scanner works. A kinematic model was then devised for the laser, scanner mirrors and f-theta lens based on the technical specifications for the components. It was concluded that this model can be constructed well by parametric representation of the components, but that it is the f-theta lens that dictates the forward kinematic equations. Because of this, the effect of the f-theta lens was considered together with the scanner during the design of the calibration system and trajectory planning.
 
+A calibration procedure was developed, tested, and documented. The final procedure, which was concluded to work, consisted of a calibration medium production, an automated measurement process and a data analysis by statistical regression. By using symmetry arguments and regression a polynomial function was fitted to the data. It was concluded that the calibration procedure reduced the distance error from 0.42\% and 0.67\% to 0.01\% and 0.48\% on the x- and y-axis respectively and that the axis-shear was mitigated. It was discussed how the accuracy could be improved even further by adding a specific term to the regression model.
 
+Different trajectory planning methods were considered and quintic trajectories were found to best suit the purpose. The method of quintic trajectory planning was adapted to the specific characteristics of the laser powder bed fusion system. It was implemented by sampling the trajectories while respecting the hardware limitations of the scanner and the process controller.
 
+It was proposed that cubic trajectories can also be used if they are modified and that they open the possibility to determine the time elapsed by the trajectories analytically instead of the heuristic method used for the quintic trajectory. Specifically it was shown that the elapsed time can be chosen in a way that guarantees that the maximum velocity of the scanner is always reached, but never crossed. The algebraic work to determine an analytic expression that fulfils this was presented and it was found that the cubic trajectories can be implemented in the same way as the quintic trajectories. 
+
+The implementation of both types of trajectories were proven to work experimentally by testing different combinations of velocities and positions.
+
+In this way tools have been developed that can improve the open platform for laser powder bed fusion by increasing the accuracy of both the geometry reproduction and, one of the most important process parameters, the energy density.
